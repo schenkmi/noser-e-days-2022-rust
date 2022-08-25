@@ -13,9 +13,11 @@ use std::io::Read;
 use std::fs::File;
 //use std::fs::Metadata;
 use std::fs;
+use std::path::Path;
 
 use openssl::nid::Nid;
 use openssl::error::ErrorStack;
+use openssl::pkey::Private;
 use openssl::pkey::Public;
 use openssl::sign::{Signer, Verifier};
 use openssl::ec::{EcKey, EcGroup, EcPoint};
@@ -55,33 +57,33 @@ fn create_ec_keypair() {
     let s = String::from_utf8(priv_key).expect("Found invalid UTF-8");
     println!("private key = {}", s); 
     fs::write("private.pem", s).expect("Unable to write file");
-
-
-
-
-    // let mut ctx = openssl::bn::BigNumContext::new().unwrap();
-
-    // println!("private eckey = {:?}", key.private_key());
-
-    // let pem = key.private_key_to_pem().unwrap();
-    // println!("pem = {:?}", pem);
-
-    // // convert pem vector to string
-    // let s = String::from_utf8(pem).expect("Found invalid UTF-8");
-    // println!("{}", s);
-
-
-    // let bytes = key.public_key().to_bytes(&group,
-    //     openssl::ec::PointConversionForm::COMPRESSED, &mut ctx).unwrap();
-
-    // println!("public key = {:?}", bytes);
-
-    // drop(key);
-    // let public_key = EcPoint::from_bytes(&group, &bytes, &mut ctx).unwrap();
-    // let ec_key = EcKey::from_public_key(&group, &public_key).unwrap();
-
-    // assert!(ec_key.check_key().is_ok());
 }
+
+
+fn get_ec_keypair() -> Result<EcKey<Private>, ErrorStack> {
+    if !Path::new("private.pem").exists() {
+        println!("private.pem not exist, creating it");
+        create_ec_keypair();
+    }
+
+    // private PEM contains public and private key
+    let data = fs::read("private.pem").expect("Unable to read file");
+
+
+    // create an EcKey from the binary form of a EcPoint
+    //let group = EcGroup::from_curve_name(Nid::SECP256K1).unwrap();
+
+    //let point = EcPoint::from_bytes(&group, &data, &mut ctx).unwrap();
+    //let key = EcKey::private_key_from_pem(&group, &point);
+
+    // convert Vec<u8> to &[u8]
+    let c = &data[..];
+
+    let keypair = EcKey::private_key_from_pem(c);
+
+    return keypair;
+}
+
 
 
 fn main() {
@@ -139,7 +141,7 @@ fn main() {
     println!("ECDSA signatur: {:?}", signature);
     
     println!("Hello, world!");
-    let data = b"hello, world!";
+    //let data = b"hello, world!";
 
     // Verify the data
     let mut verifier = Verifier::new(MessageDigest::sha512(), &keypair).unwrap();
@@ -172,5 +174,32 @@ fn main() {
         println!("[{}]", argument);
     }
 
-    create_ec_keypair();
+
+
+    let ec_key_pair = get_ec_keypair().unwrap();
+
+
+    // Sign the data
+    let private_key = PKey::from_ec_key(ec_key_pair).unwrap();
+
+    let mut signer = Signer::new(MessageDigest::sha512(), &private_key).unwrap();
+    signer.update(data).unwrap();
+    let signature = signer.sign_to_vec().unwrap();
+
+    println!("ECDSA signatur: {:?}", signature);
+
+
+    // Verify the data
+    let mut verifier = Verifier::new(MessageDigest::sha512(), &private_key).unwrap();
+    verifier.update(data).unwrap();
+
+    let result = verifier.verify(&signature).unwrap();
+
+    if result {
+        println!("verify OK :-)");
+    }
+    else {
+        println!("verify KO :-(");
+    }
+
 }
